@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Post, Category, STICKY_COLORS } from '@/types/post';
+import { Post, Category, STICKY_COLORS, Emoji, EMOJIS } from '@/types/post';
+import { getUserFingerprint } from '@/lib/fingerprint';
 import { toast } from 'sonner';
 
 export function usePosts() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Category | 'all'>('all');
+  const [reactions, setReactions] = useState<Record<string, Record<Emoji, number>>>({});
+  const [userReactions, setUserReactions] = useState<Record<string, Emoji[]>>({});
+
+  const fingerprint = getUserFingerprint();
 
   // Fetch posts
   const fetchPosts = useCallback(async () => {
@@ -26,10 +31,49 @@ export function usePosts() {
     }
   }, []);
 
+  // Fetch reactions
+  const fetchReactions = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reactions')
+        .select('*');
+
+      if (error) throw error;
+
+      // Group reactions by post and emoji
+      const reactionMap: Record<string, Record<Emoji, number>> = {};
+      const userReactionMap: Record<string, Emoji[]> = {};
+
+      (data || []).forEach((reaction) => {
+        const emoji = reaction.emoji as Emoji;
+        const postId = reaction.post_id;
+        
+        // Count reactions per post per emoji
+        if (!reactionMap[postId]) {
+          reactionMap[postId] = {} as Record<Emoji, number>;
+        }
+        reactionMap[postId][emoji] = (reactionMap[postId][emoji] || 0) + 1;
+
+        // Track user's own reactions
+        if (reaction.user_fingerprint === fingerprint) {
+          if (!userReactionMap[postId]) {
+            userReactionMap[postId] = [];
+          }
+          userReactionMap[postId].push(emoji);
+        }
+      });
+
+      setReactions(reactionMap);
+      setUserReactions(userReactionMap);
+    } catch (error) {
+      console.error('Error fetching reactions:', error);
+    }
+  }, [fingerprint]);
+
   // Create post
   const createPost = async (message: string, category: Category) => {
     const color = STICKY_COLORS[Math.floor(Math.random() * STICKY_COLORS.length)];
-    const rotation = Math.random() * 6 - 3; // -3 to 3 degrees
+    const rotation = Math.random() * 4 - 2; // Subtle rotation
 
     try {
       const { error } = await supabase
@@ -42,7 +86,7 @@ export function usePosts() {
         });
 
       if (error) throw error;
-      toast.success('Posted to the wall! 🎉');
+      toast.success('Thought shared! 🎉');
       return true;
     } catch (error) {
       console.error('Error creating post:', error);
@@ -51,46 +95,48 @@ export function usePosts() {
     }
   };
 
-  // Like post
-  const likePost = async (postId: string, currentLikes: number) => {
-    // Check if already liked in this session
-    const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]');
-    if (likedPosts.includes(postId)) {
-      toast.info('You already liked this! 💕');
-      return false;
-    }
-
-    // Optimistic update
-    setPosts(prev => 
-      prev.map(post => 
-        post.id === postId 
-          ? { ...post, likes: post.likes + 1 } 
-          : post
-      )
-    );
-
+  // Add reaction
+  const addReaction = async (postId: string, emoji: Emoji): Promise<boolean> => {
     try {
       const { error } = await supabase
-        .from('posts')
-        .update({ likes: currentLikes + 1 })
-        .eq('id', postId);
+        .from('reactions')
+        .insert({
+          post_id: postId,
+          emoji,
+          user_fingerprint: fingerprint,
+        });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') {
+          toast.info('You already reacted with this emoji!');
+          return false;
+        }
+        throw error;
+      }
 
-      // Save to localStorage to prevent spam
-      localStorage.setItem('likedPosts', JSON.stringify([...likedPosts, postId]));
       return true;
     } catch (error) {
-      // Revert optimistic update
-      setPosts(prev => 
-        prev.map(post => 
-          post.id === postId 
-            ? { ...post, likes: currentLikes } 
-            : post
-        )
-      );
-      console.error('Error liking post:', error);
-      toast.error('Failed to like. Try again!');
+      console.error('Error adding reaction:', error);
+      toast.error('Failed to react');
+      return false;
+    }
+  };
+
+  // Remove reaction
+  const removeReaction = async (postId: string, emoji: Emoji): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from('reactions')
+        .delete()
+        .eq('post_id', postId)
+        .eq('emoji', emoji)
+        .eq('user_fingerprint', fingerprint);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error removing reaction:', error);
+      toast.error('Failed to remove reaction');
       return false;
     }
   };
@@ -98,16 +144,13 @@ export function usePosts() {
   // Subscribe to real-time updates
   useEffect(() => {
     fetchPosts();
+    fetchReactions();
 
-    const channel = supabase
+    const postsChannel = supabase
       .channel('posts-changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'posts',
-        },
+        { event: '*', schema: 'public', table: 'posts' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setPosts(prev => [payload.new as Post, ...prev]);
@@ -124,19 +167,37 @@ export function usePosts() {
       )
       .subscribe();
 
+    const reactionsChannel = supabase
+      .channel('reactions-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reactions' },
+        () => {
+          // Refetch reactions on any change
+          fetchReactions();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(postsChannel);
+      supabase.removeChannel(reactionsChannel);
     };
-  }, [fetchPosts]);
+  }, [fetchPosts, fetchReactions]);
 
   // Filter posts
   const filteredPosts = filter === 'all' 
     ? posts 
     : posts.filter(post => post.category === filter);
 
-  // Get trending posts (most liked)
+  // Get trending posts (by total reactions)
   const trendingPosts = [...posts]
-    .sort((a, b) => b.likes - a.likes)
+    .map(post => {
+      const postReactions = reactions[post.id] || {};
+      const totalReactions = Object.values(postReactions).reduce((sum: number, count: number) => sum + count, 0);
+      return { ...post, totalReactions };
+    })
+    .sort((a, b) => (b.totalReactions as number) - (a.totalReactions as number))
     .slice(0, 5);
 
   return {
@@ -145,8 +206,11 @@ export function usePosts() {
     loading,
     filter,
     setFilter,
+    reactions,
+    userReactions,
     createPost,
-    likePost,
+    addReaction,
+    removeReaction,
     refetch: fetchPosts,
   };
 }
