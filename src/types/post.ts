@@ -1,5 +1,15 @@
 export type Category = 'Humor' | 'Confession' | 'Idea' | 'Motivation';
 
+export type Emoji = '❤️' | '😂' | '🔥' | '😮' | '😢' | '👏';
+
+export const EMOJIS: Emoji[] = ['❤️', '😂', '🔥', '😮', '😢', '👏'];
+
+export interface Reaction {
+  emoji: Emoji;
+  count: number;
+  hasReacted: boolean;
+}
+
 export interface Post {
   id: string;
   message: string;
@@ -8,6 +18,7 @@ export interface Post {
   color: string;
   rotation: number;
   created_at: string;
+  reactions?: Record<Emoji, number>;
 }
 
 export const STICKY_COLORS = [
@@ -34,3 +45,6 @@ export const CATEGORY_BADGE_CLASSES: Record<Category, string> = {
   Idea: 'badge-idea',
   Motivation: 'badge-motivation',
 };
+
+export const MOOD_EMOJIS = ['😊', '😔', '😡', '❤️', '🔥', '💭', '✨', '🎉'] as const;
+export type MoodEmoji = typeof MOOD_EMOJIS[number];

@@ -1,40 +1,45 @@
-import { TrendingUp, Heart } from 'lucide-react';
-import { Post, CATEGORY_EMOJIS } from '@/types/post';
+import { TrendingUp } from 'lucide-react';
+import { Post, Emoji } from '@/types/post';
 
 interface TrendingSectionProps {
   posts: Post[];
+  reactions: Record<string, Record<Emoji, number>>;
 }
 
-export function TrendingSection({ posts }: TrendingSectionProps) {
+export function TrendingSection({ posts, reactions }: TrendingSectionProps) {
   if (posts.length === 0) return null;
 
   return (
-    <div className="w-full max-w-2xl mx-auto mb-6">
-      <div className="bg-card/60 backdrop-blur-sm rounded-xl p-4 border border-border/30">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp className="w-4 h-4 text-primary" />
-          <h3 className="font-semibold text-sm text-foreground">Trending Now 🔥</h3>
-        </div>
+    <section className="my-8 animate-fade-in delay-200">
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp className="w-5 h-5 text-accent" />
+        <h2 className="font-heading text-lg font-semibold text-foreground">
+          Trending Now
+        </h2>
+      </div>
 
-        <div className="flex flex-wrap gap-2">
-          {posts.map((post, index) => (
+      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        {posts.slice(0, 5).map((post, index) => {
+          const postReactions = reactions[post.id] || {};
+          const totalReactions = Object.values(postReactions).reduce((sum: number, count: number) => sum + count, 0);
+          
+          return (
             <div
               key={post.id}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/50 border border-border/30 text-xs"
+              className="flex-shrink-0 w-64 p-4 rounded-xl bg-card border border-border
+                         hover:bg-secondary/50 transition-all duration-200 cursor-pointer"
             >
-              <span className="font-bold text-primary">#{index + 1}</span>
-              <span>{CATEGORY_EMOJIS[post.category]}</span>
-              <span className="max-w-[120px] truncate text-foreground/80">
-                {post.message}
-              </span>
-              <span className="flex items-center gap-0.5 text-destructive">
-                <Heart className="w-3 h-3 fill-current" />
-                {post.likes}
-              </span>
+              <div className="flex items-start gap-2 mb-2">
+                <span className="text-xl font-bold text-primary">#{index + 1}</span>
+                <p className="text-sm text-foreground line-clamp-2">{post.message}</p>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {(totalReactions as number) > 0 ? `${totalReactions} reactions` : `${post.likes} likes`}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
-    </div>
+    </section>
   );
 }

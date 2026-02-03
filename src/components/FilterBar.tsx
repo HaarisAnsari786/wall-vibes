@@ -1,37 +1,30 @@
 import { Category, CATEGORY_EMOJIS } from '@/types/post';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface FilterBarProps {
   currentFilter: Category | 'all';
   onFilterChange: (filter: Category | 'all') => void;
 }
 
-const FILTERS: (Category | 'all')[] = ['all', 'Humor', 'Confession', 'Idea', 'Motivation'];
+const filters: (Category | 'all')[] = ['all', 'Humor', 'Confession', 'Idea', 'Motivation'];
 
 export function FilterBar({ currentFilter, onFilterChange }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      {FILTERS.map((filter) => (
-        <Button
+    <div className="flex flex-wrap justify-center gap-2 my-8 animate-fade-in delay-300">
+      {filters.map((filter) => (
+        <button
           key={filter}
-          variant={currentFilter === filter ? 'default' : 'outline'}
-          size="sm"
           onClick={() => onFilterChange(filter)}
-          className={`rounded-full transition-all ${
-            currentFilter === filter 
-              ? 'bg-primary text-primary-foreground shadow-md' 
-              : 'bg-background/50 hover:bg-background border-border/50'
-          }`}
-        >
-          {filter === 'all' ? (
-            <span>✨ All</span>
-          ) : (
-            <span className="flex items-center gap-1">
-              <span>{CATEGORY_EMOJIS[filter]}</span>
-              <span>{filter}</span>
-            </span>
+          className={cn(
+            "px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200",
+            "border border-border",
+            currentFilter === filter
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-card text-foreground hover:bg-secondary"
           )}
-        </Button>
+        >
+          {filter === 'all' ? '✨ All' : `${CATEGORY_EMOJIS[filter]} ${filter}`}
+        </button>
       ))}
     </div>
   );
